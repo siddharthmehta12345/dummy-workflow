@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 class ReadinessCheckController {
 
-    //This is a controller
+    //This is a controller.
 
     @GetMapping("/ping")
     fun ping(): ResponseEntity<Any> {
