@@ -3,7 +3,7 @@ version: '3.0'
 services:
   dummy-workflow:
     container_name: "dummy-workflow-test-app"
-    image: "maven:3-jdk-11"
+    image: "maven:3-openjdk-17"
     ports:
       - "9999:9999"
     volumes:
