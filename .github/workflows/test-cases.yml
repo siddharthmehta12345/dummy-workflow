@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  checks: write
+  contents: read
+  pull-requests: write
+  issues: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,6 +30,11 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-m2-
+
+      - name: Install Docker Compose
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.23.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
 
       - name: Run the test cases using Docker Compose
         run: |
@@ -47,3 +58,88 @@ jobs:
         run: |
           docker-compose down --volumes --remove-orphans
           docker system prune -f --volumes
+
+      - name: Send Test Results to API
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+        run: |
+          # Install xmllint if not available
+          if ! command -v xmllint &> /dev/null; then
+            echo "Installing xmllint..."
+            sudo apt-get update -qq
+            sudo apt-get install -y libxml2-utils
+          fi
+          # Set build status
+          if [[ "$JOB_STATUS" == "success" ]]; then
+            BUILD_STATUS="success"
+            BUILD_ERROR=""
+          else
+            BUILD_STATUS="failure"
+            # Capture recent logs for error context
+            BUILD_ERROR=$(docker-compose logs --tail=50 2>&1 | tr '\n' ' ' | sed 's/"/\\"/g')
+          fi
+          
+          # Parse JUnit XML and extract test counts
+          TEST_RESULTS_FILE=$(find . -name "TEST-*.xml" | head -n 1)
+          
+          if [ -f "$TEST_RESULTS_FILE" ]; then
+            # Extract counts using xmllint
+            TOTAL_TESTS=$(xmllint --xpath "string(/testsuite/@tests)" $TEST_RESULTS_FILE)
+            FAILURES=$(xmllint --xpath "string(/testsuite/@failures)" $TEST_RESULTS_FILE)
+            ERRORS=$(xmllint --xpath "string(/testsuite/@errors)" $TEST_RESULTS_FILE)
+            SKIPPED=$(xmllint --xpath "string(/testsuite/@skipped)" $TEST_RESULTS_FILE)
+            SUCCESS=$((TOTAL_TESTS - FAILURES - ERRORS - SKIPPED))
+          else
+            # No test results file - set defaults
+            TOTAL_TESTS=0
+            SUCCESS=0
+            FAILURES=0
+            ERRORS=0
+            SKIPPED=0
+            
+            # If we're here and build failed, it's likely tests didn't even run
+            if [[ "$BUILD_STATUS" == "failure" && -z "$BUILD_ERROR" ]]; then
+              BUILD_ERROR="Tests did not run or no test results file was generated"
+            fi
+          fi
+          
+          # Create JSON payload using heredoc to avoid escaping issues
+          JSON_PAYLOAD=$(cat <<EOF
+          {
+            "repository": "$GITHUB_REPOSITORY",
+            "commit": "$GITHUB_SHA",
+            "run_id": "$GITHUB_RUN_ID",
+            "build_status": "$BUILD_STATUS",
+            "total": $TOTAL_TESTS,
+            "success": $SUCCESS,
+            "failures": $FAILURES,
+            "errors": $ERRORS,
+            "skipped": $SKIPPED
+          }
+          EOF
+          )
+          
+          # Add error details if available
+          if [[ -n "$BUILD_ERROR" ]]; then
+            # Truncate error message if too long
+            if [[ ${#BUILD_ERROR} -gt 1000 ]]; then
+              BUILD_ERROR="${BUILD_ERROR:0:997}..."
+            fi
+            
+            # Update JSON to include error message
+            JSON_PAYLOAD=$(echo $JSON_PAYLOAD | sed 's/}$/,"error_details": "'"$BUILD_ERROR"'"}/') 
+          fi
+          
+          echo "Sending results to API: $JSON_PAYLOAD"
+          
+          # Send to API endpoint (replace with your actual endpoint)
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $API_TOKEN" \
+            -d "$JSON_PAYLOAD" \
+            https://your-api-endpoint.com/test-results
