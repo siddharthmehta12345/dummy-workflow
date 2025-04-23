@@ -68,6 +68,12 @@ jobs:
           GITHUB_RUN_ID: ${{ github.run_id }}
           API_TOKEN: ${{ secrets.API_TOKEN }}
         run: |
+          # Install xmllint if not available
+          if ! command -v xmllint &> /dev/null; then
+            echo "Installing xmllint..."
+            sudo apt-get update -qq
+            sudo apt-get install -y libxml2-utils
+          fi
           # Set build status
           if [[ "$JOB_STATUS" == "success" ]]; then
             BUILD_STATUS="success"
