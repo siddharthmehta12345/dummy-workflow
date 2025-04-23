@@ -18,7 +18,7 @@ class DemoApplicationTests {
 	@Test
 	fun mockUnEqualTest() {
 		val a = "Hello"
-		val b = "World"
+		val b = "Hello"
 		assertNotEquals(a,b)
 	}
 
