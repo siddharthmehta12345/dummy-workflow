@@ -1,0 +1,49 @@
+name: run test cases
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Give permissions to workspace
+        run: sudo chmod -R ugo+rwx ${{ github.workspace }}
+
+      - name: Restore Maven Cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-
+
+      - name: Run the test cases using Docker Compose
+        run: |
+          docker-compose down --volumes --remove-orphans
+          docker-compose up --abort-on-container-exit
+
+      - name: Save Maven Cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+
+      - name: Publish JUnit Test Results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          junit_files: "**/surefire-reports/TEST-*.xml"
+
+      - name: Cleanup Docker
+        if: always()
+        run: |
+          docker-compose down --volumes --remove-orphans
+          docker system prune -f --volumes
