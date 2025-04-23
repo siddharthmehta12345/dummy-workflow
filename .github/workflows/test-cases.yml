@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  checks: write
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,6 +20,10 @@ jobs:
 
       - name: Give permissions to workspace
         run: sudo chmod -R ugo+rwx ${{ github.workspace }}
+
+      - name: Print GITHUB_TOKEN (obfuscated)
+        run: |
+          echo "GITHUB_TOKEN starts with: ${GITHUB_TOKEN:0:4}********"
 
       - name: Restore Maven Cache
         uses: actions/cache@v3
@@ -29,7 +37,7 @@ jobs:
         run: |
           sudo curl -L "https://github.com/docker/compose/releases/download/v2.23.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
           sudo chmod +x /usr/local/bin/docker-compose
-          
+
       - name: Run the test cases using Docker Compose
         run: |
           docker-compose down --volumes --remove-orphans
